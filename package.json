@@ -1,0 +1,19 @@
+{
+  "name": "genesis-ontology-weaver",
+  "version": "1.0.0",
+  "description": "GENESIS Ontology Weaver — Causal graph engine. Discovers WHY patterns exist, not just THAT they exist.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}
