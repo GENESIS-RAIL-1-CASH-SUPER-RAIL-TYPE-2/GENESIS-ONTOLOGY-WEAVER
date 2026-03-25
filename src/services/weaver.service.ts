@@ -347,6 +347,7 @@ export class WeaverService {
       lastInterventionAt: this.lastInterventionAt,
       lastRegimeScanAt: this.lastRegimeScanAt,
       uptime,
+      mirageOverlays: 0,  // Set by index.ts from mirage service
     };
   }
 

@@ -21,6 +21,7 @@
 import express, { Request, Response } from 'express';
 import { GraphService } from './services/graph.service';
 import { WeaverService } from './services/weaver.service';
+import { MirageService } from './services/mirage.service';
 import type { RegimeType } from './types';
 
 // ── Configuration ──
@@ -34,6 +35,7 @@ const WHITEBOARD_URL = process.env.WHITEBOARD_URL || 'http://genesis-whiteboard:
 // ── Services ──
 const graph = new GraphService();
 const weaver = new WeaverService(graph);
+const mirage = new MirageService(graph);
 
 // ── Express App ──
 const app = express();
@@ -57,15 +59,19 @@ function fire(url: string, payload: unknown): void {
 
 app.get('/health', (_req: Request, res: Response) => {
   const state = weaver.getState(Date.now() - startTime);
+  const mirageStats = mirage.getStats();
   res.json({
     status: 'OPERATIONAL',
     service: 'GENESIS-ONTOLOGY-WEAVER',
-    version: '1.0',
+    version: '2.0',
     port: PORT,
     doctrine: 'They optimize functions. We operationalize truth.',
     objects: state.totalObjects,
     links: state.totalLinks,
     graphHealth: state.graphHealth.toFixed(3),
+    mirageOverlays: mirageStats.totalOverlays,
+    perceptionGaps: mirageStats.totalGaps,
+    divergenceWindows: mirageStats.activeDivergenceWindows,
     uptime: Date.now() - startTime,
     timestamp: new Date().toISOString(),
   });
@@ -79,6 +85,7 @@ app.get('/metrics', (_req: Request, res: Response) => {
   res.json({
     state: weaver.getState(Date.now() - startTime),
     graph: graph.getStats(),
+    mirage: mirage.getStats(),
     uptime: Date.now() - startTime,
     timestamp: new Date().toISOString(),
   });
@@ -205,6 +212,145 @@ app.get('/graph/weak-links', (req: Request, res: Response) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+// MIRAGE OVERLAYS (8 endpoints)
+// ═══════════════════════════════════════════════════════════════════════
+
+/** GET /mirage/archetypes — available rival perception models */
+app.get('/mirage/archetypes', (_req: Request, res: Response) => {
+  const archetypes = mirage.getAvailableArchetypes();
+  res.json({ archetypes, count: archetypes.length });
+});
+
+/** POST /mirage/create — create a mirage overlay for a rival archetype */
+app.post('/mirage/create', (req: Request, res: Response) => {
+  try {
+    const { archetypeId } = req.body;
+    if (!archetypeId) {
+      res.status(400).json({ ok: false, error: 'archetypeId required' });
+      return;
+    }
+    const overlay = mirage.createOverlay(archetypeId);
+    if (!overlay) {
+      res.status(400).json({ ok: false, error: `Unknown archetype: ${archetypeId}` });
+      return;
+    }
+    res.json({ ok: true, overlay });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ ok: false, error: message });
+  }
+});
+
+/** POST /mirage/create-all — create overlays for all 9 rival archetypes */
+app.post('/mirage/create-all', (_req: Request, res: Response) => {
+  try {
+    const overlays = mirage.createAllOverlays();
+    res.json({ ok: true, created: overlays.length, overlays });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ ok: false, error: message });
+  }
+});
+
+/** GET /mirage/overlays — list all active mirage overlays */
+app.get('/mirage/overlays', (_req: Request, res: Response) => {
+  const overlays = mirage.getOverlays();
+  const stats = mirage.getStats();
+  res.json({ overlays, stats });
+});
+
+/** GET /mirage/:overlayId/projection — what a rival sees (projected links) */
+app.get('/mirage/:overlayId/projection', (req: Request, res: Response) => {
+  const overlayId = req.params.overlayId as string;
+  const overlay = mirage.getOverlay(overlayId);
+  if (!overlay) {
+    res.status(404).json({ ok: false, error: 'Overlay not found' });
+    return;
+  }
+  const projection = mirage.projectOverlay(overlayId);
+  const visible = projection.filter(p => p.visible);
+  const invisible = projection.filter(p => !p.visible);
+  res.json({
+    overlay,
+    projection: {
+      totalLinks: projection.length,
+      visibleToRival: visible.length,
+      invisibleToRival: invisible.length,
+      links: projection,
+    },
+  });
+});
+
+/** GET /mirage/:overlayId/gaps — perception gaps (where rival is wrong) */
+app.get('/mirage/:overlayId/gaps', (req: Request, res: Response) => {
+  const overlayId = req.params.overlayId as string;
+  const overlay = mirage.getOverlay(overlayId);
+  if (!overlay) {
+    res.status(404).json({ ok: false, error: 'Overlay not found' });
+    return;
+  }
+  const gaps = mirage.getGaps(overlayId);
+  res.json({
+    overlayId,
+    archetypeId: overlay.archetypeId,
+    gaps,
+    count: gaps.length,
+    totalExploitability: gaps.reduce((s, g) => s + g.exploitability, 0),
+  });
+});
+
+/** GET /mirage/divergence-windows — moments where multiple rivals are simultaneously wrong */
+app.get('/mirage/divergence-windows', (_req: Request, res: Response) => {
+  const windows = mirage.getDivergenceWindows();
+  const allGaps = mirage.getAllGaps();
+  res.json({
+    windows,
+    count: windows.length,
+    topGaps: allGaps.slice(0, 10),
+    doctrine: 'Maximum confusion = maximum camouflage. Trade when all rival models diverge from sovereign truth.',
+  });
+});
+
+/** POST /mirage/simulate-visibility — what would rivals infer from our trade? */
+app.post('/mirage/simulate-visibility', (req: Request, res: Response) => {
+  try {
+    const { pair, side, sizeUsd, venue } = req.body;
+    if (!pair || !side || !sizeUsd || !venue) {
+      res.status(400).json({ ok: false, error: 'pair, side, sizeUsd, venue required' });
+      return;
+    }
+    const result = mirage.simulateTradeVisibility({ pair, side, sizeUsd, venue });
+
+    // Forward high-confusion simulations to Whiteboard as intelligence
+    if (result.confusionScore > 0.6) {
+      fire(`${WHITEBOARD_URL}/intel/ingest`, {
+        source: 'ONTOLOGY_WEAVER',
+        category: 'MIRAGE_HIGH_CONFUSION',
+        content: {
+          pair, side, sizeUsd, venue,
+          confusionScore: result.confusionScore,
+          rivalCount: result.rivalInferences.length,
+        },
+        confidence: result.confusionScore,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.json({ ok: true, simulation: result });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ ok: false, error: message });
+  }
+});
+
+/** DELETE /mirage/:overlayId — remove an overlay */
+app.delete('/mirage/:overlayId', (req: Request, res: Response) => {
+  const overlayId = req.params.overlayId as string;
+  const removed = mirage.removeOverlay(overlayId);
+  res.json({ ok: removed, overlayId });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // LOOPS
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -280,6 +426,7 @@ function startIntelForwardLoop(): void {
   setInterval(() => {
     const state = weaver.getState(Date.now() - startTime);
     const stats = graph.getStats();
+    const mirageStats = mirage.getStats();
 
     fire(`${GTC_URL}/telemetry/append`, {
       eventType: 'WEAVER_HEARTBEAT',
@@ -292,11 +439,41 @@ function startIntelForwardLoop(): void {
         interventions: state.totalInterventions,
         regimeShifts: state.totalRegimeShifts,
         weakLinks: stats.weakLinks,
+        mirageOverlays: mirageStats.totalOverlays,
+        perceptionGaps: mirageStats.totalGaps,
+        avgDivergence: mirageStats.avgDivergence,
+        divergenceWindows: mirageStats.activeDivergenceWindows,
       },
       timestamp: new Date().toISOString(),
     });
   }, 300000);
   console.log('[WEAVER] Loop 4: Intel Forward — every 300s (→ GTC)');
+}
+
+/** Loop 5: Mirage Refresh (90s) — re-project all overlays from sovereign graph */
+function startMirageRefreshLoop(): void {
+  setInterval(() => {
+    const result = mirage.refreshAllOverlays();
+    if (result.refreshed > 0) {
+      const windows = mirage.getDivergenceWindows();
+      console.log(`[WEAVER] Mirage refresh: ${result.refreshed} overlays, ${result.totalGaps} gaps, avg divergence=${result.avgDivergence.toFixed(3)}`);
+
+      if (windows.length > 0) {
+        const w = windows[0];
+        console.log(`[WEAVER] DIVERGENCE WINDOW: ${w.archetypeIds.length} archetypes diverging on ${w.gapCount} links (max=${w.maxDivergence.toFixed(2)})`);
+
+        // Alert CIA on divergence windows
+        fire(`${CIA_URL}/assessment/receive`, {
+          type: 'DIVERGENCE_WINDOW',
+          title: `Mirage divergence: ${w.archetypeIds.length} rival models simultaneously wrong`,
+          summary: `${w.archetypeIds.join(', ')} diverging. ${w.gapCount} causal gaps. Mean divergence: ${w.meanDivergence.toFixed(2)}. ${w.sovereignAdvantage}`,
+          source: 'GENESIS-ONTOLOGY-WEAVER',
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  }, 90000);
+  console.log('[WEAVER] Loop 5: Mirage Refresh — every 90s (re-project rival perceptions)');
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -311,28 +488,38 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('  Doctrine: "They optimize functions. We operationalize truth."');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
-  console.log('  Endpoints (12):');
+  console.log('  Endpoints (21):');
   console.log('    Health:        GET  /health, /state, /metrics');
   console.log('    Ingestion:     POST /ingest/participant, /ingest/regime, /ingest/intent');
   console.log('    Graph:         GET  /graph/stats, /graph/trace/:id, /graph/weak-links');
   console.log('    Interventions: POST /intervene, GET /interventions');
   console.log('    Regime:        GET  /regime/alerts');
+  console.log('    Mirage:        GET  /mirage/archetypes, /mirage/overlays');
+  console.log('                   POST /mirage/create, /mirage/create-all');
+  console.log('                   GET  /mirage/:id/projection, /mirage/:id/gaps');
+  console.log('                   GET  /mirage/divergence-windows');
+  console.log('                   POST /mirage/simulate-visibility');
+  console.log('                   DEL  /mirage/:id');
   console.log('');
-  console.log('  Loops (4):');
+  console.log('  Loops (5):');
   console.log('    [1] Causal Link Decay  — 60s  (unreinforced links weaken)');
   console.log('    [2] Regime Scanner     — 120s (→ CIA + Whiteboard on shift)');
   console.log('    [3] Sentry Sync        — 120s (← Sentry rival profiles)');
   console.log('    [4] Intel Forward      — 300s (→ GTC)');
+  console.log('    [5] Mirage Refresh     — 90s  (re-project rival perceptions)');
   console.log('');
   console.log('  Three-Layer Ontology:');
   console.log('    Semantic: Objects + Causal Links (12 V1 templates)');
   console.log('    Kinetic:  What-If Interventions + Auto-Discovery');
   console.log('    Dynamic:  Provenance, Decay, Audit Trails');
   console.log('');
-  console.log('  V1: Rule-based causal templates');
-  console.log('  V2: DoWhy/CausalNex causal discovery (GPU tier)');
+  console.log('  Mirage Overlays (V2):');
+  console.log('    Sovereign master graph + N rival perception projections');
+  console.log('    9 archetype models | Perception gaps | Divergence windows');
+  console.log('    Trade visibility simulation | Zero kinetic deception');
   console.log('');
   console.log('  The graph sees the arrows no one else has modeled.');
+  console.log('  The mirages show us what everyone else thinks they see.');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
 
@@ -340,6 +527,11 @@ app.listen(PORT, '0.0.0.0', () => {
   startRegimeScannerLoop();
   startSentrySyncLoop();
   startIntelForwardLoop();
+  startMirageRefreshLoop();
+
+  // Auto-create all 9 mirage overlays on boot
+  const overlays = mirage.createAllOverlays();
+  console.log(`[WEAVER] Mirage: ${overlays.length} rival perception overlays initialized`);
 });
 
 // ── Graceful Shutdown ──

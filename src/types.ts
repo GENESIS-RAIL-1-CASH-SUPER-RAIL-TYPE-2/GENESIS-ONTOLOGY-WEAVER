@@ -171,4 +171,95 @@ export interface WeaverState {
   lastInterventionAt: string | null;
   lastRegimeScanAt: string | null;
   uptime: number;
+  mirageOverlays: number;            // Active mirage overlays
+}
+
+// ── Mirage Overlays: Rival Perception Projections ─────────────────
+
+/** Rival archetype perception model — what a rival CAN see, what they MISS */
+export interface PerceptionModel {
+  archetypeId: string;               // e.g. 'STATISTICAL_ARB', 'MOMENTUM_IGNITION'
+  visibleLinkTypes: CausalType[];    // Which causal link types this rival can detect
+  blindSpots: CausalType[];          // Link types completely invisible to this rival
+  strengthBias: Record<CausalType, number>;  // Multiplier: 1.0=accurate, >1=overweight, <1=underweight
+  confirmationBias: number;          // 0-1 — how much they overweight confirming evidence
+  regimeAwareness: number;           // 0-1 — ability to detect regime shifts (0=blind, 1=perfect)
+  latencyDisadvantageMs: number;     // How much later they see changes vs sovereign
+  description: string;
+}
+
+/** A mirage overlay — branched rival-perception view of the sovereign graph */
+export interface MirageOverlay {
+  overlayId: string;
+  archetypeId: string;               // Which rival archetype this models
+  perceptionModel: PerceptionModel;
+  projectedObjects: number;          // Objects visible to this rival
+  projectedLinks: number;            // Links visible to this rival
+  perceptionGaps: number;            // Count of sovereign links invisible to this rival
+  divergenceScore: number;           // 0-1 — how far this overlay diverges from sovereign truth
+  lastProjectedAt: string;
+  createdAt: string;
+}
+
+/** A projected link as seen through a rival's perception model */
+export interface ProjectedLink {
+  linkId: string;                    // Original sovereign link ID
+  fromObjectId: string;
+  toObjectId: string;
+  causalType: CausalType;
+  sovereignStrength: number;         // True strength in sovereign graph
+  perceivedStrength: number;         // What the rival thinks the strength is
+  strengthError: number;             // sovereign - perceived (positive = rival underestimates)
+  visible: boolean;                  // Can the rival see this link at all?
+  biasApplied: number;              // Multiplier that was applied
+}
+
+/** Perception gap — where a rival's world model diverges from sovereign truth */
+export interface PerceptionGap {
+  gapId: string;
+  overlayId: string;
+  archetypeId: string;
+  gapType: 'INVISIBLE_LINK' | 'STRENGTH_ERROR' | 'REGIME_BLIND' | 'CAUSAL_MISATTRIBUTION';
+  sovereignLinkId: string;
+  description: string;
+  exploitability: number;            // 0-1 — how much alpha we can extract from this gap
+  detectedAt: string;
+}
+
+/** Divergence window — moment where multiple rival models are simultaneously wrong */
+export interface DivergenceWindow {
+  windowId: string;
+  overlayIds: string[];              // Which overlays are diverging
+  archetypeIds: string[];            // Which rival types are affected
+  meanDivergence: number;            // 0-1 — average divergence across overlays
+  maxDivergence: number;             // 0-1 — peak divergence
+  gapCount: number;                  // Total exploitable gaps in this window
+  sovereignAdvantage: string;        // Description of our information edge
+  detectedAt: string;
+}
+
+/** Trade visibility simulation — what rivals would infer from seeing our trade */
+export interface TradeVisibilityResult {
+  simulationId: string;
+  tradeParams: {
+    pair: string;
+    side: 'BUY' | 'SELL';
+    sizeUsd: number;
+    venue: string;
+  };
+  rivalInferences: RivalInference[];
+  confusionScore: number;            // 0-1 — how confused are rivals collectively?
+  consistencyScore: number;          // 0-1 — how consistent are rival inferences with each other? (low = good for us)
+  simulatedAt: string;
+}
+
+/** What a single rival archetype would infer from seeing our trade */
+export interface RivalInference {
+  overlayId: string;
+  archetypeId: string;
+  inferredIntent: string;            // What the rival thinks we're doing
+  confidenceInInference: number;     // 0-1 — how confident the rival is
+  wrongAbout: string[];              // What the rival gets wrong
+  predictedReaction: string;         // What the rival would do in response
+  reactionLatencyMs: number;
 }
